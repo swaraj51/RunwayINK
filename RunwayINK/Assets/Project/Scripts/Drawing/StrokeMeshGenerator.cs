@@ -59,14 +59,25 @@ public class StrokeMeshGenerator : MonoBehaviour
                 // 2. Calculate the dynamic width based on trigger pressure
                 float currentWidth = maxFabricWidth * Mathf.Lerp(p1.Pressure, p2.Pressure, t);
 
-                // 3. Orient the ribbon flat relative to how you are holding the controller
-                Quaternion currentRot = Quaternion.Slerp(p1.Rotation, p2.Rotation, t);
-                Vector3 rightDir = currentRot * Vector3.right;
+                // 3. Orient the ribbon flat against the skin using Cross Product math
+                // Blend the skin angles for a smooth transition
+                Vector3 surfaceNormal = Vector3.Lerp(p1.Normal, p2.Normal, t).normalized;
+                
+                // Calculate which way the stroke is moving
+                Vector3 pathDirection = (p2.Position - p0.Position).normalized; 
 
-                // 4. Generate the Left and Right vertices of the fabric strip
+                // CROSS PRODUCT: Finds the exact perpendicular vector between the outward skin and the forward stroke!
+                Vector3 rightDir = Vector3.Cross(surfaceNormal, pathDirection).normalized;
+
+                // Fallback: If points perfectly overlap, use the wrist rotation so the mesh doesn't disappear
+                if (rightDir == Vector3.zero) 
+                {
+                    rightDir = Quaternion.Slerp(p1.Rotation, p2.Rotation, t) * Vector3.right;
+                }
+
+                // 4. Generate the Left and Right vertices of the fabric strip 
                 vertices.Add(centerPos - (rightDir * currentWidth * 0.5f));
                 vertices.Add(centerPos + (rightDir * currentWidth * 0.5f));
-
                 // 5. Generate UVs for future fabric textures (Sprint 4)
                 float v = (i + t) / stroke.Points.Count;
                 uvs.Add(new Vector2(0, v));

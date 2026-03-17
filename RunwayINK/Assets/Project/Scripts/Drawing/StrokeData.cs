@@ -6,15 +6,19 @@ public struct StrokePoint
 {
     public Vector3 Position;
     public Quaternion Rotation;
-    public float Pressure; // 0.0 to 1.0 (from controller trigger)
+    public float Pressure;
     public Color PointColor;
+    
+    // NEW SPRINT 3 VARIABLE
+    public Vector3 Normal; 
 
-    public StrokePoint(Vector3 pos, Quaternion rot, float pressure, Color color)
+    public StrokePoint(Vector3 pos, Quaternion rot, float pressure, Color color, Vector3 normal)
     {
         Position = pos;
         Rotation = rot;
         Pressure = pressure;
         PointColor = color;
+        Normal = normal; // Save the skin angle!
     }
 }
 
