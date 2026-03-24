@@ -3,7 +3,7 @@ using UnityEngine;
 // Task 2.1: Drawing Engine
 public interface IDrawingEngine 
 {
-    void ProcessInput(Vector3 position, Quaternion rotation, float pressure);
+    void ProcessInput(Vector3 position, Quaternion rotation, float pressure, bool isDrawingNow);
     void SetColor(Color color);
     void ClearAllStrokes();
 }

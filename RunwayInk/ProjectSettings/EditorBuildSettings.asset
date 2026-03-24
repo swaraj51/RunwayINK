@@ -15,6 +15,8 @@ EditorBuildSettings:
     path: Assets/Samples/Meta XR Core SDK/85.0.0/Mixed Reality Sample/Scenes/CustomSceneManager.unity
     guid: 791889f480495ad4bb295ab9733f3cd6
   m_configObjects:
+    Unity.XR.Oculus.Settings: {fileID: 11400000, guid: 2373bf7251b5af54b9f8b50f9a8cfbe0,
+      type: 2}
     com.unity.xr.management.loader_settings: {fileID: 11400000, guid: e93de5cbc371f9b4fba7abbd90b38f2c,
       type: 2}
     com.unity.xr.openxr.settings4: {fileID: 11400000, guid: 92ee6ce2d8cdf934a93b1a9893efcbfc,

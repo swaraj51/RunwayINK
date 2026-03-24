@@ -2,9 +2,6 @@ using UnityEngine;
 
 public class DrawingEngine : MonoBehaviour, IDrawingEngine 
 {
-    [Header("Input Dependencies")]
-    [SerializeField] private QuestControllerStylusMock stylusInput;
-    
     [Header("Visual Feedback")]
     [SerializeField] private Transform stylusCursor;
     [SerializeField] private float maxCursorSize = 0.02f; 
@@ -49,26 +46,18 @@ public class DrawingEngine : MonoBehaviour, IDrawingEngine
             }
         }
     }
-    private void Update()
-    {
-        if (stylusInput == null) return;
-
-        UpdateCursorVisuals();
-        ProcessInput(stylusInput.TipPosition, stylusInput.TipRotation, stylusInput.Pressure);
-    }
-
-    private void UpdateCursorVisuals()
+    private void UpdateCursorVisuals(Vector3 position, Quaternion rotation, float pressure)
     {
         if (stylusCursor == null) return;
-        stylusCursor.position = stylusInput.TipPosition;
-        stylusCursor.rotation = stylusInput.TipRotation;
-        float currentSize = Mathf.Lerp(0.005f, maxCursorSize, stylusInput.Pressure);
+        stylusCursor.position = position;
+        stylusCursor.rotation = rotation;
+        float currentSize = Mathf.Lerp(0.005f, maxCursorSize, pressure);
         stylusCursor.localScale = new Vector3(currentSize, currentSize, currentSize);
     }
 
-    public void ProcessInput(Vector3 position, Quaternion rotation, float pressure)
+    public void ProcessInput(Vector3 position, Quaternion rotation, float pressure, bool isDrawingNow)
     {
-        bool isDrawingNow = stylusInput.IsDrawing;
+        //isDrawingNow = stylusInput.IsDrawing;
         
         Vector3 forwardDirection = rotation * Vector3.forward; 
         Vector3 rayStart = position - (forwardDirection * 0.02f); 
