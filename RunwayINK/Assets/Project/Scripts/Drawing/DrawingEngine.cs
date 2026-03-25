@@ -6,11 +6,11 @@ public class DrawingEngine : MonoBehaviour, IDrawingEngine
     [SerializeField] private Transform stylusCursor;
     [SerializeField] private float maxCursorSize = 0.02f; 
     
-    [Header("Generation (Task 5.3)")]
-    [Tooltip("Drag your FabricStroke_Prefab here from the project folder")]
-    [SerializeField] private StrokeMeshGenerator strokePrefab; 
+    //[Header("Generation")]
+    //[Tooltip("Drag your FabricStroke_Prefab here from the project folder")]
+   //[SerializeField] private StrokeMeshGenerator strokePrefab; 
 
-    [Header("Surface Projection (Sprint 3)")]
+    [Header("Surface Projection")]
     [Tooltip("The physics layer for the Mannequin")]
     [SerializeField] private LayerMask canvasLayer;
     
@@ -19,6 +19,23 @@ public class DrawingEngine : MonoBehaviour, IDrawingEngine
     
     [Tooltip("Pushes the fabric off the skin so it doesn't clip inside")]
     [SerializeField] private float skinOffset = 0.005f; // 5 millimeters
+
+    [Header("Croquis Boundaries (Phase 1)")]
+    [Tooltip("Drag your new BoundaryLine_Prefab here")]
+    [SerializeField] private LineRenderer boundaryLinePrefab;
+    [Header("Spline Editor (Phase 3)")]
+    [Tooltip("How close the pen needs to be to grab a point (in meters)")]
+    [SerializeField] private float grabRadius = 0.05f; // 5 cm
+    
+    // Memory bank for all completed lines
+    private System.Collections.Generic.List<LineRenderer> allDrawnLines = new System.Collections.Generic.List<LineRenderer>();
+    
+    // Variables to remember exactly which point we are dragging
+    private LineRenderer grabbedLine = null;
+    private int grabbedPointIndex = -1;
+    
+    // This holds the current line we are actively drawing
+    private LineRenderer currentBoundaryLine;
     private Stroke currentStroke;
     private StrokeMeshGenerator currentMeshGenerator;
     private Color currentColor = Color.cyan;
@@ -84,41 +101,77 @@ public class DrawingEngine : MonoBehaviour, IDrawingEngine
             vrDebugLaser.endColor = Color.red;
         }
 
-        // 1. TRIGGER PULLED & HITTING CANVAS: Start a new stroke
+       // 1. TRIGGER PULLED & HITTING CANVAS: Start a new boundary line
         if (isDrawingNow && !wasDrawingLastFrame && hitCanvas)
         {
-            currentStroke = new Stroke();
-            currentMeshGenerator = Instantiate(strokePrefab, Vector3.zero, Quaternion.identity);
-            currentMeshGenerator.SetFabricColor(currentColor);
+            // Spawn a new line and set its very first point
+            currentBoundaryLine = Instantiate(boundaryLinePrefab, Vector3.zero, Quaternion.identity);
+            currentBoundaryLine.positionCount = 1;
+            currentBoundaryLine.SetPosition(0, snappedPosition);
         }
         
-        // 2. HOLDING TRIGGER & HITTING CANVAS: Add points
+        // 2. HOLDING TRIGGER & HITTING CANVAS: Add points to the line
         else if (isDrawingNow && wasDrawingLastFrame && hitCanvas)
         {
-            // Safety check: Make sure a stroke actually exists (in case they pulled trigger in thin air, then hit the body)
-            if (currentStroke == null)
+            // Safety check: Ensure the line actually exists
+            if (currentBoundaryLine == null)
             {
-                currentStroke = new Stroke();
-                currentMeshGenerator = Instantiate(strokePrefab, Vector3.zero, Quaternion.identity);
-                currentMeshGenerator.SetFabricColor(currentColor);
+                currentBoundaryLine = Instantiate(boundaryLinePrefab, Vector3.zero, Quaternion.identity);
+                currentBoundaryLine.positionCount = 1;
+                currentBoundaryLine.SetPosition(0, snappedPosition);
             }
 
-            if (currentStroke.Points.Count == 0 || 
-                Vector3.Distance(currentStroke.Points[currentStroke.Points.Count - 1].Position, snappedPosition) > 0.005f)
+            // Get the last point we drew
+            Vector3 lastPoint = currentBoundaryLine.GetPosition(currentBoundaryLine.positionCount - 1);
+
+            // Only drop a new point if we moved the pen far enough (e.g., 5 millimeters)
+            // This prevents the line from having too many overlapping points, keeping performance high!
+            if (Vector3.Distance(lastPoint, snappedPosition) > 0.005f) 
             {
-               currentStroke.AddPoint(new StrokePoint(snappedPosition, rotation, pressure, currentColor, hit.normal));
-                currentMeshGenerator.UpdateMesh(currentStroke); 
+                currentBoundaryLine.positionCount++;
+                currentBoundaryLine.SetPosition(currentBoundaryLine.positionCount - 1, snappedPosition);
             }
         }
         
-        // 3. TRIGGER RELEASED OR LASER FELL OFF THE BODY: Finish the stroke
-        // By checking !hitCanvas here, the stroke automatically cuts off if you slip off the mannequin!
+        // 3. TRIGGER RELEASED OR FELL OFF BODY: Finish the line
+        // 3. TRIGGER RELEASED OR FELL OFF BODY: Finish the line
         else if ((!isDrawingNow || !hitCanvas) && wasDrawingLastFrame)
         {
-            if (currentStroke != null)
+            if (currentBoundaryLine != null)
             {
-                currentStroke = null;
-                currentMeshGenerator = null;
+                // 1. Smooth the line out into editable spline points
+                currentBoundaryLine.Simplify(0.002f); 
+                
+                int pointCount = currentBoundaryLine.positionCount;
+                if (pointCount > 10) 
+                {
+                    Vector3 startPoint = currentBoundaryLine.GetPosition(0);
+                    Vector3 endPoint = currentBoundaryLine.GetPosition(pointCount - 1);
+                    float gapDistance = Vector3.Distance(startPoint, endPoint);
+                    
+                    // 2. Calculate the total length of the stroke
+                    float totalLength = 0f;
+                    for (int i = 0; i < pointCount - 1; i++)
+                    {
+                        totalLength += Vector3.Distance(currentBoundaryLine.GetPosition(i), currentBoundaryLine.GetPosition(i + 1));
+                    }
+
+                    // 3. THE RATIO LOGIC
+                    // We close the loop IF the gap is less than 15% of the total length
+                    // AND we add a hard limit (gap must be less than 10cm) so it doesn't snap massive mistakes.
+                    if (gapDistance < (totalLength * 0.15f) && gapDistance < 0.10f) 
+                    {
+                        Debug.Log($"XR SUCCESS: Loop Closed! Gap: {gapDistance:F3}m | Length: {totalLength:F3}m");
+                        currentBoundaryLine.SetPosition(pointCount - 1, startPoint);
+                    }
+                    else
+                    {
+                        Debug.Log("Left open. User was drawing a detail line.");
+                    }
+                }
+                // Save the finished shape so we can edit it later!
+                allDrawnLines.Add(currentBoundaryLine);                 
+                currentBoundaryLine = null;
             }
         }
 
@@ -136,4 +189,48 @@ public class DrawingEngine : MonoBehaviour, IDrawingEngine
         }
     }
     public void ClearAllStrokes() { /* Sprint 5 */ }
+    public void ProcessEditInput(Vector3 penPosition, bool isHoldingEditButton)
+    {
+        if (isHoldingEditButton)
+        {
+            // 1. If we aren't holding anything yet, search for the closest point
+            if (grabbedLine == null)
+            {
+                float closestDistance = grabRadius; // Start with our max grab range
+
+                foreach (LineRenderer line in allDrawnLines)
+                {
+                    if (line == null) continue;
+
+                    // Check every single point on this line
+                    for (int i = 0; i < line.positionCount; i++)
+                    {
+                        float dist = Vector3.Distance(penPosition, line.GetPosition(i));
+                        if (dist < closestDistance)
+                        {
+                            closestDistance = dist;
+                            grabbedLine = line;
+                            grabbedPointIndex = i;
+                        }
+                    }
+                }
+            }
+
+            // 2. If we successfully grabbed a point, move it to the pen tip!
+            if (grabbedLine != null && grabbedPointIndex != -1)
+            {
+                grabbedLine.SetPosition(grabbedPointIndex, penPosition);
+                
+                // Visual feedback: Turn the laser yellow while dragging
+                vrDebugLaser.startColor = Color.yellow;
+                vrDebugLaser.endColor = Color.yellow;
+            }
+        }
+        else
+        {
+            // 3. Button released. Let go of the point.
+            grabbedLine = null;
+            grabbedPointIndex = -1;
+        }
+    }
 }

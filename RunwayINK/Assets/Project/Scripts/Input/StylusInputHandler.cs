@@ -10,7 +10,7 @@ public class StylusInputHandler : MonoBehaviour
 
     private const string MX_INK_PROFILE = "/interaction_profiles/logitech/mx_ink_stylus_logitech";
 
-   void Update()
+    void Update()
     {
         string rightDevice = OVRPlugin.GetCurrentInteractionProfileName(OVRPlugin.Hand.HandRight);
         bool isUsingStylus = rightDevice == MX_INK_PROFILE;
@@ -22,27 +22,34 @@ public class StylusInputHandler : MonoBehaviour
                 Vector3 penPosition = handPose.Position.FromFlippedZVector3f();
                 Quaternion penRotation = handPose.Orientation.FromFlippedZQuatf();
                 
-                // 1. Read the physical nib pressure (pushing against a real desk)
-                OVRPlugin.GetActionStateFloat("tip", out float penPressure);
-                
-                // 2. Read the main index finger button (squeezing in the air)
-                OVRPlugin.GetActionStateBoolean("front", out bool frontButton);
+                // 1. Read the physical nib (for drawing against a surface)
+                OVRPlugin.GetActionStateFloat("tip", out float nibPressure);
 
-                // DEBUG: This will print raw pen data to your console every frame!
-                // Debug.Log($"MX Ink -> Nib: {penPressure} | Button: {frontButton}");
+                // 2. Read the Grab Button (front index finger) - Reverted back to Drawing!
+                OVRPlugin.GetActionStateBoolean("front", out bool grabButton);
 
-                // 3. We draw if the nib is pressed against something OR the front button is held
-                bool isDrawing = (penPressure > pressureThreshold) || frontButton;
+                // 3. Read the Middle Rocker switch - We are turning this into our Edit tool!
+                OVRPlugin.GetActionStateFloat("middle", out float triggerPressure);
+
+                // --- DRAWING LOGIC ---
+                // Draw if the tip is pushed OR the grab button is squeezed
+                bool isDrawing = (nibPressure > pressureThreshold) || grabButton;
+                float finalPressure = grabButton ? 1.0f : nibPressure;
 
                 if (drawingEngine != null)
                 {
-                    // Safety check: If they are drawing using the button in the air, 
-                    // penPressure is 0. We must force it to 1.0f so the fabric line isn't invisibly thin!
-                    float finalPressure = isDrawing && penPressure <= 0.01f ? 1.0f : penPressure;
-
+                    // Send the Drawing data
                     drawingEngine.ProcessInput(penPosition, penRotation, finalPressure, isDrawing);
+        
+                    // --- EDITING LOGIC ---
+                    // If they squeeze the middle trigger past the threshold, activate Edit Mode!
+                    bool isEditing = triggerPressure > pressureThreshold;
+                    
+                    // Send the Edit data
+                    drawingEngine.ProcessEditInput(penPosition, isEditing);
                 }
             }
         }
     }
+    
 }
