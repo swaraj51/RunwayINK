@@ -5,6 +5,7 @@ TagManager:
   serializedVersion: 2
   tags:
   - StylusTip
+  - Stylus
   layers:
   - Default
   - TransparentFX
