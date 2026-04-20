@@ -8,11 +8,6 @@ public class DrawingEngine : MonoBehaviour, IDrawingEngine
     [Header("Tool States")]
     [Tooltip("Check this box to test the freehand Drape Tool. Uncheck for Sketch Tool.")]
     public bool isDrapeMode = false; 
-    
-    //[Header("Generation")]
-    //[Tooltip("Drag your FabricStroke_Prefab here from the project folder")]
-   //[SerializeField] private StrokeMeshGenerator strokePrefab; 
-
     [Header("Surface Projection")]
     [Tooltip("The physics layer for the Mannequin")]
     [SerializeField] private LayerMask canvasLayer;
@@ -22,18 +17,23 @@ public class DrawingEngine : MonoBehaviour, IDrawingEngine
     
     [Tooltip("Pushes the fabric off the skin so it doesn't clip inside")]
     [SerializeField] private float skinOffset = 0.005f; // 5 millimeters
-
+    [Header("Runway Setup")]
+    [Tooltip("Drag your Mannequin here so clothes stick to her!")]
+    public Transform mannequinTransform;
     [Header("Croquis Boundaries (Phase 1)")]
     [Tooltip("Drag your new BoundaryLine_Prefab here")]
     [SerializeField] private LineRenderer boundaryLinePrefab;
     [Header("Spline Editor (Phase 3)")]
     [Tooltip("How close the pen needs to be to grab a point (in meters)")]
     [SerializeField] private float grabRadius = 0.05f; // 5 cm
-    
-    // Memory bank for all completed lines
+    [Header("Fabric System")]
+    public Material currentFabricMaterial;
+    [Tooltip("Drag a new LineRenderer prefab here, set width to 0.05 for a thick brush")]
+    public LineRenderer fabricBrushPrefab;
     private System.Collections.Generic.List<LineRenderer> allDrawnLines = new System.Collections.Generic.List<LineRenderer>();
     // Memory bank for the fabrics we generate
     private System.Collections.Generic.List<GameObject> generatedFabrics = new System.Collections.Generic.List<GameObject>();
+    // Memory bank for the fabrics we generate
     // Variables to remember exactly which point we are dragging
     private LineRenderer grabbedLine = null;
     private int grabbedPointIndex = -1;
@@ -52,9 +52,9 @@ public class DrawingEngine : MonoBehaviour, IDrawingEngine
 
     private void Start()
     {
-        vrDebugLaser = new GameObject("VRLaser").AddComponent<LineRenderer>();
-        vrDebugLaser.startWidth = 0.005f; 
-        vrDebugLaser.endWidth = 0.005f;
+       vrDebugLaser = new GameObject("VRLaser").AddComponent<LineRenderer>();
+        vrDebugLaser.startWidth = 0.002f; // Make it very thin and professional
+        vrDebugLaser.endWidth = 0.002f;
         vrDebugLaser.material = new Material(Shader.Find("Sprites/Default"));
         if (stylusCursor != null)
         {
@@ -67,123 +67,90 @@ public class DrawingEngine : MonoBehaviour, IDrawingEngine
             }
         }
     }
-    private void UpdateCursorVisuals(Vector3 position, Quaternion rotation, float pressure)
+   private void UpdateCursorVisuals(Vector3 position, Quaternion rotation, float pressure)
     {
         if (stylusCursor == null) return;
         stylusCursor.position = position;
         stylusCursor.rotation = rotation;
-        float currentSize = Mathf.Lerp(0.005f, maxCursorSize, pressure);
-        stylusCursor.localScale = new Vector3(currentSize, currentSize, currentSize);
+        
+       
     }
 
-   public void ProcessInput(Vector3 position, Quaternion rotation, float pressure, bool isDrawingNow)
+    public void ProcessInput(Vector3 position, Quaternion rotation, float pressure, bool isDrawingNow)
     {
         Vector3 forwardDirection = rotation * Vector3.forward; 
         Vector3 rayStart = position - (forwardDirection * 0.02f); 
-
-        vrDebugLaser.SetPosition(0, rayStart);
         bool hitCanvas = Physics.Raycast(rayStart, forwardDirection, out RaycastHit hit, snapDistance, canvasLayer);
         Vector3 snappedPosition = hitCanvas ? hit.point + (hit.normal * skinOffset) : position; 
-
-        // Laser visuals
-        vrDebugLaser.SetPosition(1, hitCanvas ? hit.point : rayStart + (forwardDirection * snapDistance));
-        vrDebugLaser.startColor = hitCanvas ? Color.green : Color.red;
-        vrDebugLaser.endColor = hitCanvas ? Color.green : Color.red;
 
         // 1. TRIGGER PULLED
         if (isDrawingNow && !wasDrawingLastFrame && hitCanvas)
         {
             if (!isDrapeMode) 
             {
-                // TOOL 1: PENCIL - Start a new white line
+                // TOOL 1: PENCIL (Thin Line)
                 currentBoundaryLine = Instantiate(boundaryLinePrefab, Vector3.zero, Quaternion.identity);
+                currentBoundaryLine.transform.SetParent(mannequinTransform, true);
                 currentBoundaryLine.positionCount = 1;
                 currentBoundaryLine.SetPosition(0, snappedPosition);
+
+                // THE FIX: Apply the selected color to the Pencil line!
+                currentBoundaryLine.startColor = currentColor;
+                currentBoundaryLine.endColor = currentColor;
+                
+                // If using URP, tint the material so it isn't dark
+                if (currentBoundaryLine.material.HasProperty("_BaseColor")) {
+                    currentBoundaryLine.material.SetColor("_BaseColor", currentColor);
+                    currentBoundaryLine.material.EnableKeyword("_EMISSION");
+                    currentBoundaryLine.material.SetColor("_EmissionColor", currentColor * 0.4f);
+                }
             }
             else 
             {
-                // TOOL 2: FABRIC MARKER - Paint Bucket Fill!
-                FillClosestLoop(snappedPosition);
+                // TOOL 2: FABRIC BRUSH (Thick Colored Texture)
+                currentBoundaryLine = Instantiate(fabricBrushPrefab, Vector3.zero, Quaternion.identity);
+                currentBoundaryLine.transform.SetParent(mannequinTransform, true);
+                currentBoundaryLine.positionCount = 1;
+                currentBoundaryLine.SetPosition(0, snappedPosition);
+
+                // APPLY URP MATERIAL & EXACT COLOR FIX
+                if (currentFabricMaterial != null) 
+                    currentBoundaryLine.material = new Material(currentFabricMaterial);
+                else 
+                    currentBoundaryLine.material = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+                
+                // 1. Tell the LineRenderer itself to use the color
+                currentBoundaryLine.startColor = currentColor;
+                currentBoundaryLine.endColor = currentColor;
+
+                // 2. Force the URP Material to match and add a slight emission (glow) so it isn't dark!
+                currentBoundaryLine.material.SetColor("_BaseColor", currentColor);
+                currentBoundaryLine.material.EnableKeyword("_EMISSION");
+                currentBoundaryLine.material.SetColor("_EmissionColor", currentColor * 0.4f);
             }
         }
         
-        // 2. HOLDING TRIGGER
-        else if (isDrawingNow && wasDrawingLastFrame && hitCanvas)
+        // 2. HOLDING TRIGGER (Both tools draw freely!)
+        else if (isDrawingNow && wasDrawingLastFrame && hitCanvas && currentBoundaryLine != null)
         {
-            if (!isDrapeMode)
+            Vector3 lastPoint = currentBoundaryLine.GetPosition(currentBoundaryLine.positionCount - 1);
+            if (Vector3.Distance(lastPoint, snappedPosition) > 0.005f) 
             {
-                // CRITICAL FIX: If you pulled the trigger in the air and THEN touched the body, create the line!
-                if (currentBoundaryLine == null)
-                {
-                    currentBoundaryLine = Instantiate(boundaryLinePrefab, Vector3.zero, Quaternion.identity);
-                    currentBoundaryLine.positionCount = 1;
-                    currentBoundaryLine.SetPosition(0, snappedPosition);
-                }
-
-                Vector3 lastPoint = currentBoundaryLine.GetPosition(currentBoundaryLine.positionCount - 1);
-                
-                // Drop a new point if we moved far enough
-                if (Vector3.Distance(lastPoint, snappedPosition) > 0.005f) 
-                {
-                    currentBoundaryLine.positionCount++;
-                    currentBoundaryLine.SetPosition(currentBoundaryLine.positionCount - 1, snappedPosition);
-                }
+                currentBoundaryLine.positionCount++;
+                currentBoundaryLine.SetPosition(currentBoundaryLine.positionCount - 1, snappedPosition);
             }
         }
         
         // 3. TRIGGER RELEASED
-        else if ((!isDrawingNow || !hitCanvas) && wasDrawingLastFrame)
+        else if ((!isDrawingNow || !hitCanvas) && wasDrawingLastFrame && currentBoundaryLine != null)
         {
-            if (!isDrapeMode && currentBoundaryLine != null)
-            {
-                currentBoundaryLine.Simplify(0.002f); 
-                int pointCount = currentBoundaryLine.positionCount;
-
-                // CRITICAL FIX RESTORED: The "Tail Cutter" to snap shapes closed perfectly!
-                if (pointCount > 10) 
-                {
-                    bool loopClosed = false;
-                    int cutStartIndex = 0;
-                    int cutEndIndex = pointCount - 1;
-                    int searchRange = Mathf.Max(5, Mathf.RoundToInt(pointCount * 0.3f));
-
-                    for (int i = pointCount - 1; i >= pointCount - searchRange; i--) 
-                    {
-                        for (int j = 0; j < searchRange; j++) 
-                        {
-                            if (Vector3.Distance(currentBoundaryLine.GetPosition(i), currentBoundaryLine.GetPosition(j)) < 0.03f) 
-                            {
-                                cutStartIndex = j;
-                                cutEndIndex = i;
-                                loopClosed = true;
-                                break; 
-                            }
-                        }
-                        if (loopClosed) break; 
-                    }
-
-                    if (loopClosed) 
-                    {
-                        int newPointCount = (cutEndIndex - cutStartIndex) + 1;
-                        Vector3[] trimmedPoints = new Vector3[newPointCount];
-
-                        for (int k = 0; k < newPointCount; k++) 
-                        {
-                            trimmedPoints[k] = currentBoundaryLine.GetPosition(cutStartIndex + k);
-                        }
-
-                        trimmedPoints[newPointCount - 1] = trimmedPoints[0]; 
-
-                        currentBoundaryLine.positionCount = newPointCount;
-                        currentBoundaryLine.SetPositions(trimmedPoints);
-                        Debug.Log("Pencil Tool: Loop perfectly closed!");
-                    }
-                }
-                
-                // Save the white outline permanently!
-                allDrawnLines.Add(currentBoundaryLine);
-                currentBoundaryLine = null;
-            }
+            currentBoundaryLine.Simplify(0.002f); 
+            
+            // Save to memory so your Smart Undo works
+            if (!isDrapeMode) allDrawnLines.Add(currentBoundaryLine);
+            else generatedFabrics.Add(currentBoundaryLine.gameObject); 
+            
+            currentBoundaryLine = null;
         }
         wasDrawingLastFrame = isDrawingNow;
     }
@@ -336,34 +303,41 @@ public class DrawingEngine : MonoBehaviour, IDrawingEngine
         
         meshFilter.mesh = fabricMesh;
         
-        // Assign a default URP material so we can see it clearly
-        meshRenderer.material = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-        meshRenderer.material.color = Color.cyan; 
+       // Use the selected fabric texture, or fallback to default if none is selected
+        if (currentFabricMaterial != null) 
+            meshRenderer.material = new Material(currentFabricMaterial);
+        else 
+            meshRenderer.material = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+            
+        // CRITICAL: Apply the dipped color to the fabric!
+        meshRenderer.material.color = currentColor;
         
     }
-    // --- MVP FEATURE 1: UNDO & CLEAR ---
-    public void UndoLastOutline()
+    public void UndoLastAction()
     {
-        if (allDrawnLines.Count > 0)
+        // If we are currently holding the Fabric Marker (Paint Bucket)
+        if (isDrapeMode)
         {
-            LineRenderer lastLine = allDrawnLines[allDrawnLines.Count - 1];
-            allDrawnLines.RemoveAt(allDrawnLines.Count - 1);
-            if (lastLine != null) Destroy(lastLine.gameObject);
-            Debug.Log("Undo: Removed last white outline.");
+            if (generatedFabrics.Count > 0)
+            {
+                GameObject lastFabric = generatedFabrics[generatedFabrics.Count - 1];
+                generatedFabrics.RemoveAt(generatedFabrics.Count - 1);
+                if (lastFabric != null) Destroy(lastFabric);
+                Debug.Log("Smart Undo: Removed the last 3D Fabric.");
+            }
+        }
+        // If we are currently holding the Pencil (White Outlines)
+        else
+        {
+            if (allDrawnLines.Count > 0)
+            {
+                LineRenderer lastLine = allDrawnLines[allDrawnLines.Count - 1];
+                allDrawnLines.RemoveAt(allDrawnLines.Count - 1);
+                if (lastLine != null) Destroy(lastLine.gameObject);
+                Debug.Log("Smart Undo: Removed the last Pencil Outline.");
+            }
         }
     }
-
-    public void UndoLastFabric()
-    {
-        if (generatedFabrics.Count > 0)
-        {
-            GameObject lastFabric = generatedFabrics[generatedFabrics.Count - 1];
-            generatedFabrics.RemoveAt(generatedFabrics.Count - 1);
-            if (lastFabric != null) Destroy(lastFabric);
-            Debug.Log("Undo: Removed last fabric patch.");
-        }
-    }
-
     public void ClearEntireCanvas()
     {
         foreach (var line in allDrawnLines) { if (line != null) Destroy(line.gameObject); }

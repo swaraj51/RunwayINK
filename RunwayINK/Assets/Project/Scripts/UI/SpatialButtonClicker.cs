@@ -1,28 +1,43 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Events;
 
-public class SpatialButtonClicker : MonoBehaviour
+[RequireComponent(typeof(BoxCollider))]
+public class SpatialButton : MonoBehaviour
 {
-    [Tooltip("Drag the actions you want to happen here!")]
     public UnityEvent onHoverPoke;
     
-    // THE FIX: A cooldown timer to prevent physics jitter "flapping"
+    [Header("Tooltip UX")]
+    [Tooltip("Create a 3D TextMeshPro object above the button and drag it here")]
+    public GameObject hoverTooltipText; 
+    
     private float cooldownTimer = 0f;
+
+    void Start()
+    {
+        // Hide the tooltip when the app starts
+        if (hoverTooltipText != null) hoverTooltipText.SetActive(false);
+    }
 
     private void OnTriggerEnter(Collider other)
     {
         if (other.CompareTag("Stylus"))
         {
-            // If we are still in the cooldown period, ignore the poke!
-            if (Time.time < cooldownTimer) return; 
-            
-            // Set the cooldown for 0.5 seconds from right now
-            cooldownTimer = Time.time + 0.5f; 
+            // Show the text when the pen hovers near the button!
+            if (hoverTooltipText != null) hoverTooltipText.SetActive(true);
 
-            Debug.Log($"SPATIAL SUCCESS: Triggered {gameObject.name}");
+            if (Time.time < cooldownTimer) return; 
+            cooldownTimer = Time.time + 0.5f; 
+            
             onHoverPoke.Invoke(); 
+        }
+    }
+
+    private void OnTriggerExit(Collider other)
+    {
+        if (other.CompareTag("Stylus"))
+        {
+            // Hide the text when the pen leaves
+            if (hoverTooltipText != null) hoverTooltipText.SetActive(false);
         }
     }
 }
