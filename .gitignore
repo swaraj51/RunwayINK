@@ -27,3 +27,9 @@ MemoryCaptures/
 *.unitypackage.meta
 *.app
 
+RunwayINK/Assets/XR/Loaders/OpenXRLoader.asset.meta
+RunwayINK/Assets/XR/Loaders/OpenXRLoader.asset
+RunwayINK/Assets/XR/Loaders/OculusLoader.asset.meta
+RunwayINK/Assets/XR/Loaders/OculusLoader.asset
+RunwayINK/Assets/XR/Loaders.meta
+RunwayINK/Assets/XR.meta
