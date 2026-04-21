@@ -20,6 +20,10 @@ public class DrawingEngine : MonoBehaviour, IDrawingEngine
     [Header("Runway Setup")]
     [Tooltip("Drag your Mannequin here so clothes stick to her!")]
     public Transform mannequinTransform;
+    [Tooltip("Drag the 'Armature', 'Rig', or 'Hips' from inside the Mannequin here")]
+    public Transform mannequinArmature;
+    private Transform[] allBones;
+    
     [Header("Croquis Boundaries (Phase 1)")]
     [Tooltip("Drag your new BoundaryLine_Prefab here")]
     [SerializeField] private LineRenderer boundaryLinePrefab;
@@ -52,7 +56,7 @@ public class DrawingEngine : MonoBehaviour, IDrawingEngine
 
     private void Start()
     {
-       vrDebugLaser = new GameObject("VRLaser").AddComponent<LineRenderer>();
+        vrDebugLaser = new GameObject("VRLaser").AddComponent<LineRenderer>();
         vrDebugLaser.startWidth = 0.002f; // Make it very thin and professional
         vrDebugLaser.endWidth = 0.002f;
         vrDebugLaser.material = new Material(Shader.Find("Sprites/Default"));
@@ -66,6 +70,11 @@ public class DrawingEngine : MonoBehaviour, IDrawingEngine
                 cursorRenderer.material.color = currentColor;
             }
         }
+        if (mannequinArmature != null) 
+        {
+            allBones = mannequinArmature.GetComponentsInChildren<Transform>();
+        }
+        
     }
    private void UpdateCursorVisuals(Vector3 position, Quaternion rotation, float pressure)
     {
@@ -80,78 +89,99 @@ public class DrawingEngine : MonoBehaviour, IDrawingEngine
     {
         Vector3 forwardDirection = rotation * Vector3.forward; 
         Vector3 rayStart = position - (forwardDirection * 0.02f); 
-        bool hitCanvas = Physics.Raycast(rayStart, forwardDirection, out RaycastHit hit, snapDistance, canvasLayer);
-        Vector3 snappedPosition = hitCanvas ? hit.point + (hit.normal * skinOffset) : position; 
 
-        // 1. TRIGGER PULLED
+        // 1. RAYCAST: Find the skin
+        bool hitCanvas = Physics.Raycast(rayStart, forwardDirection, out RaycastHit hit, snapDistance, canvasLayer);
+        
+        // THE FIX: Give thick fabrics an extra 5 millimeters of padding so they don't clip into curved body parts!
+        float dynamicSkinOffset = isDrapeMode ? (skinOffset + 0.005f) : skinOffset; 
+        Vector3 snappedPosition = hitCanvas ? hit.point + (hit.normal * dynamicSkinOffset) : position;
+
+        // 2. SMART LASER: Visual feedback
+        if (vrDebugLaser != null) {
+            vrDebugLaser.SetPosition(0, rayStart);
+            if (hitCanvas) {
+                vrDebugLaser.SetPosition(1, hit.point);
+                vrDebugLaser.startColor = Color.cyan;
+                vrDebugLaser.endColor = Color.cyan;
+                if (stylusCursor != null) stylusCursor.gameObject.SetActive(true);
+            } else {
+                vrDebugLaser.SetPosition(1, rayStart + (forwardDirection * 0.05f));
+                vrDebugLaser.startColor = new Color(1, 1, 1, 0.3f);
+                vrDebugLaser.endColor = new Color(1, 1, 1, 0.3f);
+                if (stylusCursor != null) stylusCursor.gameObject.SetActive(false);
+            }
+        }
+
+        // 3. TRIGGER PULLED: Start the Line and Glue to Bone
         if (isDrawingNow && !wasDrawingLastFrame && hitCanvas)
         {
+            Transform targetBone = GetNearestBone(snappedPosition);
+            
             if (!isDrapeMode) 
             {
-                // TOOL 1: PENCIL (Thin Line)
                 currentBoundaryLine = Instantiate(boundaryLinePrefab, Vector3.zero, Quaternion.identity);
-                currentBoundaryLine.transform.SetParent(mannequinTransform, true);
+                currentBoundaryLine.transform.SetParent(targetBone, false); 
                 currentBoundaryLine.positionCount = 1;
-                currentBoundaryLine.SetPosition(0, snappedPosition);
+                // LOCAL SPACE CONVERSION
+                currentBoundaryLine.SetPosition(0, targetBone.InverseTransformPoint(snappedPosition)); 
 
-                // THE FIX: Apply the selected color to the Pencil line!
                 currentBoundaryLine.startColor = currentColor;
                 currentBoundaryLine.endColor = currentColor;
-                
-                // If using URP, tint the material so it isn't dark
-                if (currentBoundaryLine.material.HasProperty("_BaseColor")) {
+                if (currentBoundaryLine.material.HasProperty("_BaseColor")) 
                     currentBoundaryLine.material.SetColor("_BaseColor", currentColor);
-                    currentBoundaryLine.material.EnableKeyword("_EMISSION");
-                    currentBoundaryLine.material.SetColor("_EmissionColor", currentColor * 0.4f);
-                }
             }
             else 
             {
-                // TOOL 2: FABRIC BRUSH (Thick Colored Texture)
                 currentBoundaryLine = Instantiate(fabricBrushPrefab, Vector3.zero, Quaternion.identity);
-                currentBoundaryLine.transform.SetParent(mannequinTransform, true);
+                currentBoundaryLine.transform.SetParent(targetBone, false); 
                 currentBoundaryLine.positionCount = 1;
-                currentBoundaryLine.SetPosition(0, snappedPosition);
+                // LOCAL SPACE CONVERSION
+                currentBoundaryLine.SetPosition(0, targetBone.InverseTransformPoint(snappedPosition));
 
-                // APPLY URP MATERIAL & EXACT COLOR FIX
-                if (currentFabricMaterial != null) 
-                    currentBoundaryLine.material = new Material(currentFabricMaterial);
-                else 
-                    currentBoundaryLine.material = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+                if (currentFabricMaterial != null) currentBoundaryLine.material = new Material(currentFabricMaterial);
+                else currentBoundaryLine.material = new Material(Shader.Find("Universal Render Pipeline/Lit"));
                 
-                // 1. Tell the LineRenderer itself to use the color
                 currentBoundaryLine.startColor = currentColor;
                 currentBoundaryLine.endColor = currentColor;
-
-                // 2. Force the URP Material to match and add a slight emission (glow) so it isn't dark!
-                currentBoundaryLine.material.SetColor("_BaseColor", currentColor);
-                currentBoundaryLine.material.EnableKeyword("_EMISSION");
-                currentBoundaryLine.material.SetColor("_EmissionColor", currentColor * 0.4f);
+                if (currentBoundaryLine.material.HasProperty("_BaseColor")) 
+                    currentBoundaryLine.material.SetColor("_BaseColor", currentColor);
             }
         }
         
-        // 2. HOLDING TRIGGER (Both tools draw freely!)
+        // 4. HOLDING TRIGGER: Continue drawing the Line across the bone
+        // *** THIS IS THE PART YOU WERE MISSING! DO NOT DELETE THIS! ***
         else if (isDrawingNow && wasDrawingLastFrame && hitCanvas && currentBoundaryLine != null)
         {
-            Vector3 lastPoint = currentBoundaryLine.GetPosition(currentBoundaryLine.positionCount - 1);
-            if (Vector3.Distance(lastPoint, snappedPosition) > 0.005f) 
+            Transform parentBone = currentBoundaryLine.transform.parent; 
+            Vector3 localSnappedPos = parentBone.InverseTransformPoint(snappedPosition);
+            
+            Vector3 lastLocalPoint = currentBoundaryLine.GetPosition(currentBoundaryLine.positionCount - 1);
+            if (Vector3.Distance(lastLocalPoint, localSnappedPos) > 0.005f) 
             {
                 currentBoundaryLine.positionCount++;
-                currentBoundaryLine.SetPosition(currentBoundaryLine.positionCount - 1, snappedPosition);
+                currentBoundaryLine.SetPosition(currentBoundaryLine.positionCount - 1, localSnappedPos);
             }
         }
-        
-        // 3. TRIGGER RELEASED
+
+        // 5. TRIGGER RELEASED: Stop drawing and save to memory
         else if ((!isDrawingNow || !hitCanvas) && wasDrawingLastFrame && currentBoundaryLine != null)
         {
-            currentBoundaryLine.Simplify(0.002f); 
-            
-            // Save to memory so your Smart Undo works
-            if (!isDrapeMode) allDrawnLines.Add(currentBoundaryLine);
-            else generatedFabrics.Add(currentBoundaryLine.gameObject); 
+            if (!isDrapeMode) 
+            {
+                // PENCIL: Smooth it out to remove hand jitter
+                currentBoundaryLine.Simplify(0.002f); 
+                allDrawnLines.Add(currentBoundaryLine);
+            }
+            else 
+            {
+                // FABRIC: Do NOT simplify! Leave the raw points exactly where you drew them.
+                generatedFabrics.Add(currentBoundaryLine.gameObject); 
+            }
             
             currentBoundaryLine = null;
         }
+
         wasDrawingLastFrame = isDrawingNow;
     }
 
@@ -346,6 +376,27 @@ public class DrawingEngine : MonoBehaviour, IDrawingEngine
         foreach (var fabric in generatedFabrics) { if (fabric != null) Destroy(fabric); }
         generatedFabrics.Clear();
         Debug.Log("Cleared the entire mannequin!");
+    }
+    // --- BONE SCANNER MATH ---
+    private Transform GetNearestBone(Vector3 hitPoint)
+    {
+        // Failsafe: If no skeleton is assigned, fallback to the main body!
+        if (allBones == null || allBones.Length == 0) return mannequinTransform;
+        
+        Transform nearest = mannequinTransform;
+        float minDistance = Mathf.Infinity;
+        
+        // Loop through every bone in the body and find the closest one
+        foreach (Transform bone in allBones)
+        {
+            float dist = Vector3.Distance(bone.position, hitPoint);
+            if (dist < minDistance) 
+            { 
+                minDistance = dist; 
+                nearest = bone; 
+            }
+        }
+        return nearest;
     }
     // --- PHASE 3B: THE FREEHAND RIBBON BRUSH ---
     /*private void GenerateRibbonFabric(LineRenderer line, float fabricWidth = 0.04f)
