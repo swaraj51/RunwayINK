@@ -15,6 +15,7 @@ public class DockManager : MonoBehaviour
     public Material silkMaterial;
     public Material denimMaterial;
     public Material leatherMaterial;
+    public Material cottonMaterial;
     [Header("Cursor Visuals")]
     [Tooltip("Drag the sphere on the tip of your stylus here")]
     public Renderer stylusCursorRenderer;
@@ -53,7 +54,7 @@ public class DockManager : MonoBehaviour
         if (p_Tools != null) p_Tools.SetActive(false);
     }
    
-    public void ActivateSketchPencil()
+    /*public void ActivateSketchPencil()
     {
         if (drawingEngine != null)
         {
@@ -77,7 +78,36 @@ public class DockManager : MonoBehaviour
             if(stylusCursorRenderer != null) {
                 stylusCursorRenderer.transform.localScale = new Vector3(0.02f, 0.02f, 0.02f);
             }
-            // CloseAllPanels();  <-- DELETE OR COMMENT OUT THIS LINE
+        }
+    }*/
+    public void ActivateSketchPencil()
+    {
+        if (drawingEngine != null)
+        {
+            // 1. Force the mode to Pencil
+            drawingEngine.isDrapeMode = false;
+            
+            // 2. HARD RESET: Manually ensure the current material is null (for white pencil)
+            drawingEngine.currentFabricMaterial = null;
+            
+            Debug.Log("✏️ HARD SWITCH: Pencil Mode Active");
+        }
+    }
+
+    public void ActivateFabricMarker()
+    {
+        if (drawingEngine != null)
+        {
+            // 1. Force the mode to Fabric
+            drawingEngine.isDrapeMode = true;
+            
+            // 2. Load the fabric material (use whichever one was last selected or a default)
+            // If you have a default fabric (like Cotton), assign it here as a fallback
+            if(drawingEngine.currentFabricMaterial == null) {
+                drawingEngine.currentFabricMaterial = cottonMaterial; 
+            }
+
+            Debug.Log("👗 HARD SWITCH: Fabric Mode Active");
         }
     }
 
@@ -95,5 +125,12 @@ public class DockManager : MonoBehaviour
     public void SelectFabricLeather()
     {
         if (drawingEngine != null) { drawingEngine.currentFabricMaterial = leatherMaterial; ActivateFabricMarker(); }
+    }
+    public void SelectFabricCotton()
+    {
+        if (drawingEngine != null) { 
+            drawingEngine.currentFabricMaterial = cottonMaterial; 
+            ActivateFabricMarker(); 
+        }
     }
 }

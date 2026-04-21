@@ -6,6 +6,11 @@ public class SpatialButton : MonoBehaviour
 {
     public UnityEvent onHoverPoke;
     
+    [Header("Audio Feedback")]
+    public AudioSource buttonAudioSource;
+    public AudioClip hoverSound;
+    public AudioClip clickSound;
+    
     [Header("Tooltip UX")]
     [Tooltip("Create a 3D TextMeshPro object above the button and drag it here")]
     public GameObject hoverTooltipText; 
@@ -20,14 +25,29 @@ public class SpatialButton : MonoBehaviour
 
     private void OnTriggerEnter(Collider other)
     {
+        // ONLY trigger if the Stylus touches it
         if (other.CompareTag("Stylus"))
         {
-            // Show the text when the pen hovers near the button!
+            // 1. Show the Tooltip
             if (hoverTooltipText != null) hoverTooltipText.SetActive(true);
 
+            // 2. Play the Hover/Tick sound just for touching the button
+            if (buttonAudioSource != null && hoverSound != null) 
+            {
+                buttonAudioSource.PlayOneShot(hoverSound);
+            }
+
+            // 3. Cooldown check (so it doesn't double-click!)
             if (Time.time < cooldownTimer) return; 
             cooldownTimer = Time.time + 0.5f; 
             
+            // 4. Play the satisfying Click/Pop sound right as the action happens
+            if (buttonAudioSource != null && clickSound != null) 
+            {
+                buttonAudioSource.PlayOneShot(clickSound);
+            }
+
+            // 5. Fire the actual button event
             onHoverPoke.Invoke(); 
         }
     }
