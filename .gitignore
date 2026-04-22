@@ -21,7 +21,6 @@ MemoryCaptures/
 *.opendb
 *.VC.db
 # Builds
-*.apk
 *.aab
 *.unitypackage
 *.unitypackage.meta
